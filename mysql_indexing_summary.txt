@@ -1,0 +1,150 @@
+MySQL Indexing
+
+Summary
+
+I. Understanding Indexes
+1. What is Index?
+    An Index is a pointer to the data in a table
+    Indexes are the same with table  of contents of a book
+    Indexes make finding data faster, more efficient
+    Indexes make data modification slower, lest efficient
+2. When should index be created?
+    Only on columns that are frequently used in the WHERE/ORDER BY clause
+    Only on columns that contain a high number of unique values
+3. When should index be avoided
+    Small tables
+    Column values are not highly unique
+    Columns that are frequently updated
+II. Types of Indexes
+1. BTREE Indexes
+    Majority of indexes that deal in mysql is this type
+    Data stored in leaf nodes
+    What Operations can BTREE Index do: =, >, >=, <, <=, or BETWEEN operators
+        Find all rows with KEY=5 (point lookup)
+        Find all rows with KEY>5 (open range)
+        Find all rows with 5<KEY<10 (closed range)
+        NOT find all rows with last digit of the KEY is Zero
+        Can be used for LIKE comparisons if the argument to LIKE is a constant string that does not start with a wildcard character
+            LIKE "ABC%" means "ABC[LOWEST]" < KEY < "ABC[HIGHEST]"
+            LIKE "%ABC" can't be optimized by use of the index
+2. RTree Indexes
+3. HASH Indexes
+4. BITMAP Indexes
+5. FULLTEXT Indexes
+    MyISAM, Innodb from MySQL 5.6
+
+III. Indexes in MyISAM vs Innodb
+1. In MyISAM data pointers point to physical offset in the data file
+    All indexes are essentially equivalent 
+2. In Innodb
+    PRIMARY KEY (Explicit or Implicit) - stores data in the leaf pages of the index, not pointer
+    Secondary Indexes – store primary key as data pointer
+3. Indexing Innodb tables
+    Data is clustered by Primary Key
+    PRIMARY KEY is implicitly appended to all indexes
+        KEY (A) is really KEY (A,ID) internally
+        Useful for sorting, Covering Index.
+IV. How MySQL Uses Indexes
+1. Using Indexes for Data Lookup
+    + Rules: MySQL will stop using key parts in multi part index as soon as it met the real range (<,>,BETWEEN), it however is able to continue using key parts further to the right if IN(…) range is used
+    Ex: 
+        Index(A, B, C)
+        - Will use Index:
+            • A> 5
+            • A=5 AND B>6
+            • A=5 and B=6 AND C>7
+            • A=5 AND B IN (2,3) AND C>5
+        - Will NOT use Index:
+            • B>5 – Leading column is not referenced
+            • B=6 AND C=7 - Leading column is not referenced
+        - Will use Part of the index
+            • A>5 AND B=2 - range on first column; only use this key part
+            • A=5 AND B>6 AND C=2 - range on second column, use 2 parts
+2. Using Index for Sorting
+    + Ex:
+        SELECT * FROM PLAYERS ORDER BY SCORE DESC LIMIT 10
+            Will use index on SCORE column
+            Without index will do “filesort”  => bad
+                (the sort is bigger than the sort buffer, it is performed a bit at a time, and then the chunks are mesorted to produce the final sorted output. Filesort should be called “sort.” It is quicksort)
+        SELECT * FROM PLAYERS WHERE COUNTRY=“US” ORDER BY SCORE DESC LIMIT 10
+            Best served by Index on (COUNTRY,SCORE)
+
+    + Multi Column indexes for efficient sorting
+        KEY(A,B)
+        - Will use Index for Sorting
+            • ORDER BY A - sorting by leading column
+            • A=5 ORDER BY B - EQ filtering by 1st and sorting by 2nd
+            • ORDER BY A DESC, B DESC - Sorting by 2 columns in same order
+            • A>5 ORDER BY A - Range on the column, sorting on the same
+
+        - Will NOT use Index for Sorting
+            • ORDER BY B - Sorting by second column in the index
+            • A>5 ORDER BY B – Range on first column, sorting by second
+            • A IN(1,2) ORDER BY B - In-Range on first column
+            • ORDER BY A ASC, B DESC - Sorting in the different order
+
+    + Sorting Rules:
+        Can’t sort in different order by 2 columns
+        Can only have Equality comparison (=) for columns which are not part of ORDER BY.
+3. Using Covering Index (Avoiding Reading The data)
+    What is covering index?
+        A covering index refers to the case when all fields selected in a query are covered by an index, in that case InnoDB (not MyISAM) will never read the data in the table, but only use the data in the index, significantly speeding up the select.
+4. Min/Max Optimizations
+    The optimizer should be able to identify the highest and lowest values of an indexed column from the B-Tree index
+    ex:
+        CREATE TABLE `history` (
+           `h_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+           `u_id` int(10) unsigned NOT NULL,
+           `cn_id` int(10) unsigned NOT NULL,
+           `f_id` int(10) unsigned NOT NULL
+           PRIMARY KEY (`h_id`)
+        ) ENGINE=InnoDB
+
+        + EXPLAIN SELECT MAX(cn_id) FROM history => will be full table scan
+        + add an index on cn_id, that query is optimized
+        + EXPLAIN SELECT MAX(cn_id) FROM history WHERE u_id = 123 => full table scan
+        + created a composite key on (u_id, cn_id) => query is optimized
+
+    SELECT MAX(SALARY) FROM EMPLOYEE GROUP BY DEPT_ID 
+    => Will benefit from (DEPT_ID,SALARY) index
+5. Indexs and Joins
+    SELECT * FROM POSTS,COMMENTS WHERE AUTHOR=“Peter” AND COMMENTS.POST_ID=POSTS.ID
+    => should set index on POSTS.AUTHOR and COMMENTS.POST_ID
+    => The index on POSTS.ID is not needed for this query performance
+
+6. Using Multiple Indexes for the table
+    SELECT * FROM TBL WHERE A=5 AND B=6
+        => Can often use Indexes on (A) and (B) separately
+        => But Index on (A,B) is much better
+    SELECT * FROM TBL WHERE A=5 OR B=6 
+        => 2 separate indexes is as good as it gets
+        => Index (A,B) can’t be used for this query
+7. Indexing Strategy Example
+    - Build Index order which benefits more queries
+        SELECT * FROM TBL WHERE A=5 AND B=6
+        SELECT * FROM TBL WHERE A>5 AND B=6
+        => KEY (B,A) Is better for such query mix
+    - All being equal put more selective key part first
+    - Do not add indexes for non performance critical queries. Many indexes slow system down
+8. Trick
+    #1: Enumerating Ranges
+        • KEY (A,B)
+        • SELECT * FROM TBL WHERE A BETWEEN 2 AND 4 AND B=5
+        => Will only use first key part of the index
+        
+        • SELECT * FROM TBL WHERE A IN (2,3,4) AND B=5
+        => Will use both key parts
+    #2: Adding Fake Filter
+        KEY (GENDER,CITY)
+        • SELECT * FROM PEOPLE WHERE CITY=“NEW YORK”
+        => Will not be able to use the index at all
+        Add Fake Filter
+        • SELECT * FROM PEOPLE WHERE GENDER IN (“M”,”F”) AND CITY=“NEW YORK”
+        => Will be able to use the index
+        • The trick works best with low selectivity columns(Gender, Status, Boolean)
+    #3: Unionizing Filesort
+        KEY(A,B)
+        • SELECT * FROM TBL WHERE A IN (1,2) ORDER BY B LIMIT 5;
+        => Will not be able to use index for SORTING
+        (SELECT * FROM TBL WHERE A=1 ORDER BY B LIMIT 5) UNION ALL (SELECT * FROM TBL WHERE A=2 ORDER BY B LIMIT 5) RDER BY B LIMIT 5;
+        => Will use the index for Sorting. “filesort” will be needed only to sort over 10 rows.
