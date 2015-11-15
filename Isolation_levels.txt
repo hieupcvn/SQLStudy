@@ -1,0 +1,80 @@
+1. Read Uncommitted
+Khi transaction thực hiện ở mức này, các truy vấn vẫn có thể truy nhập vào các bản ghi đang được cập nhật bởi một transaction khác và nhận được dữ liệu tại thời điểm đó mặc dù dữ liệu đó chưa được commit (uncommited data). 
+Nếu vì lý do nào đó transaction ban đầu rollback lại những cập nhật, dữ liệu sẽ trở lại giá trị cũ. Khi đó transaction thứ hai nhận được dữ liệu sai
+Ví dụ
+CREATE TABLE Item (id INT, NAME VARCHAR(50));
+ 
+INSERT INTO Item SELECT 1,'a';
+INSERT INTO Item SELECT 2,'b';
+INSERT INTO Item SELECT 3,'c';
+
+Mở 2 cửa sổ, 
+ở cửa sổ thứ nhất
+    START TRANSACTION;
+    UPDATE Item
+    SET name = 'x'
+    WHERE id>2;
+    SELECT SLEEP(10); --wait for 10 seconds
+    ROLLBACK;
+ở cửa số thứ hai
+    SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+    SELECT * FROM Item
+
+- Thực hiện đoạn lệnh ở cửa sổ thứ nhất rồi nhanh chóng chuyển sang thực hiện đoạn lệnh ở cửa sổ thứ hai. 
+- Cửa số thứ hai trả về bản ghi số 3 với name = ‘x’. 
+- Tuy nhiên sau đó transaction ở cửa số thứ nhất bị rollback và sau khi cả hai transaction kết thúc, bản ghi số 3 lại trở lại giá trị ban đầu name=’c’.
+=> Như vậy là transaction ở cửa số thứ hai đã nhận được dữ liệu sai vì dữ liệu này chưa được commit. Hiện tượng này gọi là uncommited read, hay còn gọi là dirty read. 
+Ưu điểm của mức isolation này là tăng độ tương tranh trong database, các tiến trình đọc không cần đợi đến khi tiến trình ghi hoàn tất mà có thể lấy dữ liệu ra được ngay
+
+2. Read Commited
+Transaction sẽ không đọc được dữ liệu đang được cập nhật mà phải đợi đến khi việc cập nhật thực hiện xong. Vì thế nó tránh được dirty read như ở mức trên
+
+ở cửa sổ thứ nhất
+    START TRANSACTION;
+    UPDATE Item
+    SET name = 'x'
+    WHERE id>2;
+    SELECT SLEEP(10); --wait for 10 seconds
+    COMMIT;
+    SELECT * FROM Item
+    WHERE id>2;
+ở cửa số thứ hai
+    SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+    INSERT INTO Item SELECT 5,'e'
+
+Sau khi thực hiện cả hai cửa sổ thấy kết quả trả về có chứa bản ghi 5 với name = ‘e’. Điều này hoàn toàn bất ngờ vì theo trình tự thực hiện đoạn lệnh ở cửa sổ thứ nhất, tất cả các bản ghi với id>2 đều được cập nhật
+Ở đây bản ghi 5 đã xuất hiện sau khi bảng được cập nhật nhưng trước khi transaction kết thúc. Vì thế nó được gọi là bản ghi ma (phantom row).
+
+3. Repeatable read
+Ngăn không cho transaction ghi vào dữ liệu đang được đọc bởi một transaction khác cho đến khi transaction khác đó hoàn tất
+
+ở cửa sổ thứ nhất
+    START TRANSACTION;
+    SELECT * FROM Item;
+    SELECT SLEEP(10); --wait for 10 seconds
+    SELECT * FROM Item;
+    COMMIT;
+
+ở cửa số thứ hai
+    SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+    UPDATE Item
+    SET name = 'x'
+    WHERE id>2;
+    SELECT * FROM item;
+
+Hai lệnh select ở cửa sổ 1 cho cùng kết quả và cửa sổ 2 phải đợi đến khi cửa sổ 1 hoàn tất mới được thực hiện. Mức isolation này đảm bảo các lệnh đọc trong cùng một transaction cho cùng kết quả, nói cách khác dữ liệu đang được đọc sẽ được bảo vệ khỏi cập nhật bởi các transaction khác. 
+Tuy nhiên nó không bảo vệ được dữ liệu khỏi insert hoặc delete: nếu thay lệnh update ở cửa sổ thứ hai bằng lệnh insert, hai lệnh select ở cửa sổ đầu sẽ cho kết quả khác nhau. Vì thế nó vẫn không tránh được hiện tượng bản ghi ma.
+
+4. Serializable
+Mức isolation khóa toàn bộ dải các bản ghi có thể bị ảnh hưởng bởi một transaction khác, dù là UPDATE/DELETE bản ghi đã có hay INSERT bản ghi mới
+
+ở cửa sổ thứ nhất
+    SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+    START TRANSACTION;
+    SELECT * FROM Item
+    SELECT SLEEP(10); --wait for 10 seconds
+    SELECT * FROM Item;
+    COMMIT;
+ở cửa số thứ hai
+    INSERT INTO Item SELECT 4,'d';
+Cửa sổ 2 sẽ bị treo đến khi cửa sổ 1 thực hiện xong, và hai lệnh SELECT trong cửa sổ 1 trả về kết quả giống nhau
