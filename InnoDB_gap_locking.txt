@@ -1,0 +1,38 @@
+
+InnoDB storage Engine
+    * ACID
+        * Atomicity: Transactions are all or nothing
+        * Consistency: Only valid data is saved
+        * Isolation: Transations do not affect each other
+        * Durability: Writen data will not be lost
+
+What is gap lock
+A gap lock is a lock on the gap between index records
+
+* InnoDB has several types of record-level locks including record locks, gap locks, and next-key locks.
+    * Record lock: This is a lock on an index record.
+        Record locks always lock index records, even if a table is defined with no indexes. For such cases, InnoDB creates a hidden clustered index and uses this index for record locking
+
+    * Gap lock: This is a lock on a gap between index records, or a lock on the gap before the first or after the last index record.
+
+    * Next-key lock: This is a combination of a record lock on the index record and a gap lock on the gap before the index record.
+
+
+
+* InnoDB sets specific types of locks as follows.
+
+    * SELECT ... FROM is a consistent read, reading a snapshot of the database and setting no locks unless the transaction isolation level is set to SERIALIZABLE. For SERIALIZABLE level, the search sets shared next-key locks on the index records it encounters.
+
+    * SELECT ... FROM ... LOCK IN SHARE MODE sets shared next-key locks on all index records the search encounters.
+
+    * For index records the search encounters, SELECT ... FROM ... FOR UPDATE blocks other sessions from doing SELECT ... FROM ... LOCK IN SHARE MODE or from reading in certain transaction isolation levels. Consistent reads will ignore any locks set on the records that exist in the read view.
+
+    * UPDATE ... WHERE ... sets an exclusive next-key lock on every record the search encounters.
+
+    * DELETE FROM ... WHERE ... sets an exclusive next-key lock on every record the search encounters.
+
+    * INSERT sets an exclusive lock on the inserted row. This lock is an index-record lock, not a next-key lock (that is, there is no gap lock) and does not prevent other sessions from inserting into the gap before the inserted row.
+
+
+* References
+http://stackoverflow.com/questions/9354022/inno-db-isolation-levels-and-locking
