@@ -1,7 +1,9 @@
 List book about perl need to read
 1. Perl practice - reread
-2. Learning Perl: Making Easy Things Easy & Hard Things Possible
-3. Programming Perl: Unmatched Power for Text Processing and Script
-4. Mastering Algorithms with Perl
-5. Intermediate Perl
-6. CGI programming with perl
+2. http://modernperlbooks.com/books/modern_perl_2014/index.html
+3. http://perldoc.perl.org/perlre.html
+4. Learning Perl: Making Easy Things Easy & Hard Things Possible
+5. Programming Perl: Unmatched Power for Text Processing and Script
+6. Mastering Algorithms with Perl
+7. Intermediate Perl
+8. CGI programming with perl
